@@ -14,7 +14,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.0';
+  var VERSION = '1.0.1';
   var HB = 'luna://org.webosbrew.hbchannel.service';
   var SAM = 'luna://com.webos.applicationManager';
   var EIM = 'luna://com.webos.service.eim';
@@ -90,18 +90,19 @@
   // LOOK = everything "Reset Lantern's look" puts back
   var LOOK = { theme: 'auto', dullDark: false, nightWall: true, wallNight: 'Night ridge', idleNight: 'same',
                accent: 0, size: 'm', shape: 'square', names: 'focus', motion: true, showBar: true, showHints: true,
-               calm: true, dockPos: 'bottom', dockAlign: 'center', dockSize: 'm', dockGlass: true, widgetAlign: 'left',
+               calm: true, dockFill: 'recent', dockCount: 5, dockPos: 'bottom', dockAlign: 'center', dockSize: 'm', dockGlass: true, widgetAlign: 'left',
                wall: { kind: 'preset', preset: 'Morning ridge', src: '' }, wallEvery: 'day', dim: 0,
                sort: 'az', showInputs: true, preview: true,
                h24: true, showDate: true, showWeather: true, unitF: false,
                idle: 30, idleBg: 'wall', idleEvery: 300, idleClock: true, idleDate: true, idleWx: true, idleWidgets: false, idleDim: true };
   var BASE = { use: {}, last: {}, pins: [], hidden: [], names: {}, colors: {}, icons: {}, widgets: [], city: null,
-               binds: {}, prev: {}, boot: 'off', watch: false, keep: false, rewarm: false, input: false, homeApp: { on: false, prev: '' }, setupDone: false, tune: { orig: {}, preOff: [] }, apps: [], linked: false };
+               binds: {}, prev: {}, boot: 'off', watch: false, keep: false, rewarm: false, input: false, homeApp: { on: false, prev: '' }, startApp: { on: false, prev: '' }, iconReload: false, setupDone: false, tune: { orig: {}, preOff: [] }, apps: [], linked: false };
   var st = {};
   var cur = null, mode = null /* null | 'settings' | 'menu' | 'learn' */, tab = 0;
   var bridges = [], sys = null, tune = null, tvInfo = null, wx = null, tvStat = null, cityHits = [], wallHits = null, pickFor = null;
   var previewTimer = null, toastTimer = null, idleTimer = null, shiftTimer = null, okTimer = null, tickTimer = null, wxTimer = null;
-  var slideTimer = null, slideAt = 0, night = false, dark = true, setupStep = 0, pendingSetup = false, wallFor = 'day';
+  var slideTimer = null, slideAt = 0, night = false, dark = true, setupStep = 0, pendingSetup = false, wallFor = 'day', wallPreview = null;
+  var iconOk = 0, iconFail = 0, pendingReload = false, ipNote = '';
   var quiet = false, okDown = false, okHeld = false, lastRefresh = 0, lastDay = -1, wallShown = '', selfLaunchAt = 0;
   var learn = null;
 
@@ -140,6 +141,7 @@
     st.apps = (st.apps || []).filter(function (a) { return a && !NOT_APPS.test(a.id); });      // also drop them from a saved list
     st.pins = (st.pins || []).filter(function (id) { return !NOT_APPS.test(id); });
     if (!st.homeApp || typeof st.homeApp !== 'object') { st.homeApp = { on: false, prev: '' }; }
+    if (!st.startApp || typeof st.startApp !== 'object') { st.startApp = { on: false, prev: '' }; }
     if (!st.tune || !st.tune.orig || !(st.tune.preOff instanceof Array)) { st.tune = { orig: {}, preOff: [] }; }
   }
   function toast(msg, ms) {
@@ -254,9 +256,20 @@
       linkIcons(list, function (ok) {
         var first = ok && !st.linked;
         st.linked = ok; save();
-        if (changed || first) { render(); if (firstRun && !mode) { focusFirst(); } }
+        if (changed || first) { iconOk = 0; iconFail = 0; render(); if (firstRun && !mode) { focusFirst(); } }
+        if (mode === 'setup') { drawSetup(true); }       // the dock step needs the list
+        if (first) { setTimeout(checkIcons, 3000); }
       });
     });
+  }
+  // On a first install the TV can refuse the freshly linked icons until the page is loaded again.
+  // If none of them arrived, reload once (after setup, if that is open).
+  function checkIcons() {
+    if (iconOk > 0) { if (st.iconReload) { st.iconReload = false; save(); } return; }
+    if (!iconFail || st.iconReload || !window.PalmSystem) { return; }
+    if (mode) { pendingReload = true; return; }
+    st.iconReload = true; save();
+    location.reload();
   }
   function launch(id) {
     if (!safeId(id)) { return; }
@@ -309,7 +322,8 @@
     return true;
   }
   function curWall() {                 // the wallpaper for this time of day
-    return st.nightWall && night ? { kind: 'preset', preset: st.wallNight, src: '' } : st.wall;
+    var n = wallPreview ? wallPreview === 'night' : night;      // while choosing, show the one being chosen
+    return st.nightWall && n ? { kind: 'preset', preset: st.wallNight, src: '' } : st.wall;
   }
 
   /* ---------- look ---------- */
@@ -342,7 +356,7 @@
       st.calm ? 'calm' : '', menuOpen() ? 'menu-open' : '',
       st.dockPos === 'bottom' ? 'dock-bottom' : '', st.dockAlign === 'center' ? 'dock-center' : '', st.dockGlass ? 'dock-glass' : '',
       st.widgetAlign === 'center' ? 'wd-center' : '',
-      quiet ? 'quiet' + (st.idleBg === 'black' || (night && st.idleNight === 'black') ? ' q-black' : '') + (st.idleDim ? ' q-dim' : '') + (st.idleWidgets ? ' q-widgets' : '') : ''
+      quiet ? 'quiet' + (st.idleBg === 'black' || (night && st.idleNight === 'black') ? ' q-black' : '') + (st.idleDim ? ' q-dim' : '') : ''
     ].join(' ');
     $('dim').style.opacity = quiet && st.idleDim ? '' : String(st.dim / 100);
     $('date').style.display = st.showDate ? '' : 'none';
@@ -371,6 +385,7 @@
   // arrived, so a slow or failed download never leaves a blank background.
   function showWall() {
     var url = wallUrl(), want = url || 'preset:' + curWall().preset, img;
+    if (document.hidden) { return; }                // nothing to show: do not hold a picture in memory
     if (want === wallShown) { return; }
     if (!url) { wallShown = want; $('wall').style.backgroundImage = wallCss(curWall().preset); return; }
     if (!wallShown) { $('wall').style.backgroundImage = wallCss('Black'); }
@@ -431,7 +446,8 @@
       src = st.icons[item.id] || (item.icon && st.linked ? 'apps/' + item.id + '/' + item.icon : '');
       if (src) {
         var img = new Image();
-        img.onload = function () { clear(card); card.appendChild(img); };
+        img.onload = function () { iconOk++; clear(card); card.appendChild(img); };
+        img.onerror = function () { iconFail++; };
         img.src = src;
       }
     }
@@ -458,9 +474,13 @@
     st.apps.forEach(function (a) { byId[a.id] = a; });
     shown = st.apps.filter(function (a) { return !has(st.hidden, a.id); });
     top = st.pins.filter(function (id) { return byId[id] && !has(st.hidden, id); }).map(function (id) { return byId[id]; });
-    if (!top.length) {
-      top = shown.filter(function (a) { return st.use[a.id] > 0; })
-                 .sort(function (x, y) { return st.use[y.id] - st.use[x.id]; }).slice(0, cols.dock - 1);
+    if (st.dockFill !== 'none') {       // top the dock up with recent or most-used apps, then A to Z, up to the chosen number
+      shown.filter(function (a) { return !has(st.pins, a.id); }).sort(function (x, y) {
+        var rx = st.last[x.id] || 0, ry = st.last[y.id] || 0, ux = st.use[x.id] || 0, uy = st.use[y.id] || 0;
+        if (st.dockFill === 'recent' && rx !== ry) { return ry - rx; }
+        if (ux !== uy) { return uy - ux; }
+        return title(x).toLowerCase() < title(y).toLowerCase() ? -1 : 1;
+      }).forEach(function (a) { if (top.length < st.dockCount) { top.push(a); } });
     }
     shown = shown.slice();
     if (st.sort === 'used') { shown.sort(function (x, y) { return (st.use[y.id] || 0) - (st.use[x.id] || 0); }); }
@@ -716,6 +736,15 @@
       var x = Math.round(Math.random() * 60 - 30), y = Math.round(Math.random() * 40 - 20);
       $('lock').style.webkitTransform = $('lock').style.transform = 'translate(' + x + 'px,' + y + 'px)';
     }, 60000);
+    $widgets.className = 'fade';
+    if (st.idleWidgets && st.widgets.length) {
+      setTimeout(function () {
+        if (!quiet) { return; }
+        $widgets.className = 'standby';
+        void $widgets.offsetWidth;                  // settle the new position before fading in
+        $widgets.className = 'standby in';
+      }, 500);
+    }
     if (st.idleBg === 'pictures' || st.idleBg === 'online') {
       nextSlide();
       slideTimer = setInterval(nextSlide, Math.max(30, st.idleEvery) * 1000);
@@ -729,6 +758,9 @@
       $('lock').style.webkitTransform = $('lock').style.transform = '';
       $('wall').style.opacity = '';
       if (wallShown === 'slide') { wallShown = ''; }
+      $widgets.className = 'fade now';              // back to their home position unseen, then fade in with everything else
+      void $widgets.offsetWidth;
+      $widgets.className = '';
       applyLook();
     }
     clearTimeout(idleTimer);
@@ -795,11 +827,11 @@
     });
   }
   function useIpLocation() {
-    toast('Looking up your location…');
+    ipNote = 'Looking up your location…'; redraw(true);
     locateByIp(function (c) {
-      if (!c) { toast('Could not find your location. Type your town instead.'); return; }
+      if (!c) { ipNote = 'Could not find your location. Type your town instead.'; redraw(true); return; }
       st.city = c; cityHits = []; save(); weather();
-      toast('Location set to ' + c.name + '. If that is wrong, type your town instead.', 5000);
+      ipNote = 'Found ' + c.name + '. If that is wrong, type your town instead.';
       redraw(true);
     });
   }
@@ -1010,6 +1042,32 @@
     }
     if (mine) { clearBinds(Object.keys(st.binds).filter(function (c) { return HOME_CODES[c]; }), write); } else { write(); }
   }
+  function appExists(id) {
+    return id === selfId() || /^com\.webos\.app\.(livetv|hdmi\d)$/.test(id) || st.apps.some(function (a) { return a.id === id; });
+  }
+  // The TV opens its "last input" when it starts. Lantern has to be in the input list for that to work,
+  // so this adds it there first, and only then names it as the last input. The old value is kept.
+  function setStartApp(on, cb) {
+    var id = selfId(), back;
+    function write(value, done) {
+      exec("luna-send -n 1 " + SET + "/setSystemSettings '" + JSON.stringify({ category: 'general', settings: { lastInputApp: value } }) + "'", function (err, out) {
+        done(!err && /"returnValue"\s*:\s*true/.test(out));
+      });
+    }
+    function finish(ok) { probe(function () { if (cb) { cb(ok); } }); }
+    if (!on) {
+      back = st.startApp.prev && st.startApp.prev !== id && appExists(st.startApp.prev) ? st.startApp.prev : 'com.webos.app.livetv';
+      return write(back, function (ok) { if (ok) { st.startApp = { on: false, prev: '' }; save(); } else { toast('The TV refused that.'); } finish(ok); });
+    }
+    setInput(true, function (ok) {
+      if (!ok) { toast('The TV would not add Lantern to its input list, so start-up was left alone.'); return finish(false); }
+      var prev = sys && sys.lastInput && sys.lastInput !== id && appExists(sys.lastInput) ? sys.lastInput : 'com.webos.app.livetv';
+      write(id, function (ok2) {
+        if (ok2) { st.startApp = { on: true, prev: prev }; save(); toast('Done. Restart the TV fully to see it start on Lantern.', 5000); } else { toast('The TV refused that.'); }
+        finish(ok2);
+      });
+    });
+  }
   function instantHome(on) {           // one switch for: keep in memory, load at TV start, reload if closed
     st.keep = on; st.rewarm = on; st.boot = on ? 'ready' : (st.boot === 'ready' ? 'off' : st.boot); save();
     applySystem(function () { probe(function () { redraw(true); }); });
@@ -1161,8 +1219,9 @@
       applySystem(function (sysOk) {
         sysOk = sysOk && tuneOk;
         exec("rm -f " + HELP + "/no-preload", null);
-        (function (next) {             // give Home back if Lantern took it
-          if (st.homeApp.on) { probe(function () { setHomeApp(st.homeApp.prev || LG_HOME, next); }); } else { next(); }
+        (function (next) {             // give Home and start-up back if Lantern took them
+          function start() { if (st.startApp.on) { setStartApp(false, next); } else { next(); } }
+          if (st.homeApp.on) { probe(function () { setHomeApp(st.homeApp.prev || LG_HOME, start); }); } else { start(); }
         })(function () {
         setInput(false, function () {
           exec("rm -f /tmp/lantern-*", function () {
@@ -1206,7 +1265,7 @@
   }
   function closeOverlay() {
     stopLearn();
-    unfocus(); mode = null; pickFor = null;
+    unfocus(); mode = null; pickFor = null; wallPreview = null;
     $overlay.className = '';
     clear($sheet);
     render();
@@ -1419,56 +1478,68 @@
 
   /* ---------- first-run setup ---------- */
 
-  var STEPS = ['Welcome', 'Where you are', 'Light and dark', 'Wallpaper', 'Your dock', 'Standby', 'Home button', 'All set'];
+  var STEPS = ['Welcome', 'Where you are', 'Light and dark', 'Wallpaper', 'Home screen', 'Your dock', 'Standby', 'Home button and start-up', 'All set'];
   function openSetup(step) {
     stopLearn();
     openOverlay('setup');
-    setupStep = step || 0;
+    $sheet.className = 'setup';
+    setupStep = step || 0; ipNote = '';
     probe(function () { if (mode === 'setup') { drawSetup(true); } });
     drawSetup();
   }
   function setupGo(d) {
     setupStep = Math.max(0, Math.min(STEPS.length - 1, setupStep + d));
-    if (STEPS[setupStep] === 'Wallpaper') { wallFor = 'day'; }
+    wallFor = 'day'; cityHits = [];
     drawSetup();
   }
-  function finishSetup() { st.setupDone = true; save(); closeOverlay(); }
+  function finishSetup() {
+    st.setupDone = true; save();
+    closeOverlay();
+    if (pendingReload) { pendingReload = false; checkIcons(); }
+  }
   function drawSetup(keep) {
-    var pos = keep ? position() : null, name = STEPS[setupStep], r, f, last, instant;
+    var pos = keep ? position() : null, name = STEPS[setupStep], last = setupStep === STEPS.length - 1;
+    var r, f, i, dots, next, first, instant, rootOk = sys && sys.ok && sys.root;
     unfocus(); clear($sheet);
     function h(text) { $sheet.appendChild(el('h2', null, text)); }
     function p(text, big) { $sheet.appendChild(el('p', big ? 'big' : null, text)); }
     function rw() { return row(); }
     function pick(host, label, key, value, after) {
-      btn(host, label, null, st[key] === value ? 'on' : '', function () { set(key, value); if (after) { after(); } });
+      btn(host, label, st[key] === value ? 'Chosen' : '', st[key] === value ? 'on' : '', function () { set(key, value); if (after) { after(); } });
     }
-    $sheet.appendChild(el('h2', null, 'Step ' + (setupStep + 1) + ' of ' + STEPS.length));
+    wallPreview = name === 'Wallpaper' && st.nightWall ? wallFor : null;
+    showWall();
+
+    dots = el('div', 'steps');
+    for (i = 0; i < STEPS.length; i++) { dots.appendChild(el('i', i < setupStep ? 'done' : i === setupStep ? 'now' : null)); }
+    $sheet.appendChild(dots);
     $sheet.appendChild(el('h1', null, name === 'Welcome' ? 'Welcome to Lantern' : name));
 
     if (name === 'Welcome') {
-      p('Lantern is a home screen for your TV: a clock, your favourite apps in a dock, and every app one press away. These steps take about a minute, and you can change everything later in Settings (the Blue button).', true);
-      p(!sys ? 'Checking the TV…' : sys.ok && sys.root ? 'Homebrew Channel is working with root access, so every feature is available.'
+      p('Lantern is a home screen for your TV: a clock, your favourite apps in a dock, and every app one press away.', true);
+      p('The next few steps set it up. Each one can be skipped, and everything can be changed later in Settings (the Blue button).');
+      p(!sys ? 'Checking the TV…' : rootOk ? 'Homebrew Channel is working with root access, so every feature is available.'
         : 'Homebrew Channel did not answer with root access. Lantern still works as a home screen, but it cannot list every app, remap buttons or tune the TV until Homebrew Channel shows "Root status: ok".');
     }
     if (name === 'Where you are') {
-      p('Your town sets the weather and the sunrise and sunset times.' + (st.city ? ' Current choice: ' + st.city.name + '.' : ''), true);
+      p(st.city ? 'Using ' + st.city.name + ' for the weather and for sunrise and sunset.' : 'Your town sets the weather and the sunrise and sunset times.', true);
       r = rw();
-      btn(r, 'Find it automatically', null, '', useIpLocation);
-      p('Uses your internet address, which is sent to ipapi.co. It is accurate to about a town and can be wrong.');
-      h('Or type it');
+      btn(r, st.city ? 'Look it up again automatically' : 'Find it automatically', null, '', useIpLocation);
+      p(ipNote || 'Uses your internet address, which is sent to ipapi.co. It is accurate to about a town and can be wrong.');
+      h(st.city ? 'Or type a different town' : 'Or type your town');
       r = rw();
       f = field(r, 'Town or city', function (q) {
         if (!q) { return; }
         getJSON('https://geocoding-api.open-meteo.com/v1/search?count=4&name=' + encodeURIComponent(q), function (res) {
           cityHits = (res && res.results) || [];
-          if (!cityHits.length) { toast('No place found (or no connection to the weather service).'); }
+          ipNote = cityHits.length ? '' : 'No place found with that name (or no connection to the weather service).';
           redraw(true);
         });
       });
       btn(r, 'Search', null, 'slim', f.__go);
       cityHits.forEach(function (hit) {
         btn(rw(), [hit.name, hit.admin1, hit.country].filter(function (x) { return x; }).join(', '), null, '', function () {
-          st.city = { name: hit.name, lat: hit.latitude, lon: hit.longitude }; cityHits = []; save(); weather(); redraw(true);
+          st.city = { name: hit.name, lat: hit.latitude, lon: hit.longitude }; cityHits = []; ipNote = ''; save(); weather(); drawSetup();
         });
       });
     }
@@ -1476,56 +1547,71 @@
       p('Lantern can be light by day and dark at night, following sunrise and sunset where you are.', true);
       r = rw();
       pick(r, 'Automatic', 'theme', 'auto'); pick(r, 'Always dark', 'theme', 'dark'); pick(r, 'Always light', 'theme', 'light');
-      r = rw();
-      onoff(r, 'Go dark in dull weather too (thick cloud, rain, fog, snow)', 'dullDark');
-      p(sunLine());
-      h('Home screen style');
-      r = rw();
-      pick(r, 'Calm: clock and dock, apps in a menu', 'calm', true, render); pick(r, 'Everything on screen', 'calm', false, render);
+      if (st.theme === 'auto') {
+        r = rw();
+        onoff(r, 'Go dark in dull weather too (thick cloud, rain, fog, snow)', 'dullDark');
+        p(sunLine());
+      }
     }
     if (name === 'Wallpaper') {
+      p(st.nightWall ? 'Choose a picture for the day and another for the night. The screen behind shows the one you are choosing.' : 'Choose the picture behind your home screen.', true);
       r = rw();
       onoff(r, 'Different wallpaper at night', 'nightWall', function () { wallFor = 'day'; redraw(true); });
-      if (st.nightWall) { btn(r, 'Choosing the picture for', wallFor === 'night' ? 'Night' : 'Day', '', function () { wallFor = wallFor === 'night' ? 'day' : 'night'; redraw(true); }); }
-      h(st.nightWall && wallFor === 'night' ? 'Night picture' : st.nightWall ? 'Day picture' : 'Picture');
+      if (st.nightWall) { btn(r, 'Now choosing', wallFor === 'night' ? 'The night picture' : 'The day picture', '', function () { wallFor = wallFor === 'night' ? 'day' : 'night'; redraw(true); }); }
       wallPicker(rw);
       p('Online photos and your own pictures are under Settings, Wallpaper.');
     }
+    if (name === 'Home screen') {
+      p('How much should be on screen when you press Home?', true);
+      r = rw();
+      pick(r, 'Calm: clock and dock, with every app in a menu', 'calm', true, render);
+      pick(r, 'Everything on screen', 'calm', false, render);
+      h('The dock');
+      r = rw();
+      cycle(r, 'Fill the dock with', 'dockFill', ['recent', 'used', 'none'], ['Recently opened apps', 'Most used apps', 'Nothing: only apps I pin'], render);
+      cycle(r, 'Apps in the dock', 'dockCount', [3, 4, 5, 6, 7, 8, 9], ['3', '4', '5', '6', '7', '8', '9'], render);
+    }
     if (name === 'Your dock') {
-      p('Choose the apps you open most. They sit in the dock; everything else is in the menu that opens when you press Down.', true);
-      if (!st.apps.length) { p('No apps found yet. You can add apps to the dock later with the Green button.'); }
-      st.apps.forEach(function (a, i) {
-        if (i % 4 === 0) { r = rw(); }
-        btn(r, title(a), has(st.pins, a.id) ? 'In the dock' : '', has(st.pins, a.id) ? 'on' : '', function () { togglePin(a.id); render(); redraw(true); });
+      p('Pin the apps you always want in the dock. ' + (st.dockFill === 'none' ? 'Only these will be in it.' : 'The rest of the dock fills itself with ' + (st.dockFill === 'recent' ? 'apps you opened recently.' : 'the apps you use most.')), true);
+      if (!st.apps.length) { p(lastRefresh ? 'Still reading the list of apps from the TV. It will appear here in a moment.' : 'No apps found yet. You can pin apps later with the Green button.'); }
+      st.apps.forEach(function (a, n) {
+        if (n % 4 === 0) { r = rw(); }
+        btn(r, title(a), has(st.pins, a.id) ? 'Pinned' : '', has(st.pins, a.id) ? 'on' : '', function () { togglePin(a.id); render(); redraw(true); });
       });
     }
     if (name === 'Standby') {
-      p('When you leave Lantern alone, the dock fades away and leaves the picture and the things you choose here.', true);
+      p('When you leave Lantern alone, the dock fades away and leaves the picture with the things you choose here.', true);
       r = rw();
       cycle(r, 'Start after', 'idle', [0, 10, 20, 30, 60, 120, 300], ['Never', '10 seconds', '20 seconds', '30 seconds', '1 minute', '2 minutes', '5 minutes']);
-      cycle(r, 'At night', 'idleNight', ['same', 'black'], ['Same as by day', 'Black with a dim clock']);
-      r = rw();
-      onoff(r, 'Clock', 'idleClock'); onoff(r, 'Date', 'idleDate'); onoff(r, 'Weather', 'idleWx', weather);
-      r = rw();
-      cycle(r, 'Background', 'idleBg', ['wall', 'pictures', 'online', 'black'], ['The home wallpaper', 'Built-in pictures in turn', 'Online photos in turn', 'Black']);
+      if (st.idle > 0) {
+        cycle(r, 'Background', 'idleBg', ['wall', 'pictures', 'online', 'black'], ['The home wallpaper', 'Built-in pictures in turn', 'Online photos in turn', 'Black']);
+        h('Show on top');
+        r = rw();
+        onoff(r, 'Clock', 'idleClock'); onoff(r, 'Date', 'idleDate'); onoff(r, 'Weather', 'idleWx', weather);
+        h('At night');
+        r = rw();
+        pick(r, 'Same as by day', 'idleNight', 'same'); pick(r, 'Black with a dim clock', 'idleNight', 'black');
+      }
     }
-    if (name === 'Home button') {
+    if (name === 'Home button and start-up') {
       if (!sys) { p('Checking the TV…', true); }
-      else if (!sys.ok || !sys.root) { p('These options need Homebrew Channel with root access, so they are skipped for now. You can come back to them in Settings, Remote.', true); }
+      else if (!rootOk) { p('These options need Homebrew Channel with root access, so they are skipped for now. They are in Settings, Remote, whenever you want them.', true); }
       else {
-        if (sys.homeApp === selfId()) { p('The Home button already opens Lantern: it is set as the TV\'s Home app.', true); }
+        h('Home button');
+        if (sys.homeApp === selfId()) { p('The Home button opens Lantern: it is set as the TV\'s Home app.', true); }
         else if (sys.defaultApps) {
-          p('Lantern can be the screen your Home button opens.', true);
           r = rw();
-          btn(r, 'Make Lantern the TV\'s Home app', null, '', function () { setHomeApp(selfId(), function () { redraw(true); }); });
-          btn(r, 'Leave the Home button as it is', null, '', function () { setupGo(1); });
+          btn(r, 'Make the Home button open Lantern', 'Off', '', function () { setHomeApp(selfId(), function () { redraw(true); }); });
         } else if (sys.hook) {
-          p('Lantern can be the screen your Home button opens, through LG Input Hook.', true);
           r = rw();
-          btn(r, 'Home button opens', st.binds[HOME_CODE] ? 'Lantern' : 'LG Home', '', function () {
+          btn(r, 'Home button opens', st.binds[HOME_CODE] ? 'Lantern' : 'LG Home', st.binds[HOME_CODE] ? 'on' : '', function () {
             if (st.binds[HOME_CODE]) { clearBinds([HOME_CODE], function () { redraw(true); }); } else { setBind(HOME_CODE, { t: 'app', id: selfId() }, function () { redraw(true); }); }
           });
-        } else { p('To make the Home button open Lantern, install LG Input Hook from Homebrew Channel, open it once, then use Settings, Remote.', true); }
+        } else { p('To make the Home button open Lantern, install LG Input Hook from Homebrew Channel, open it once, then use Settings, Remote.'); }
+        h('When the TV starts');
+        r = rw();
+        btn(r, 'Start the TV on Lantern', sys.lastInput === selfId() ? 'On' : 'Off', sys.lastInput === selfId() ? 'on' : '', function () { setStartApp(sys.lastInput !== selfId(), function () { redraw(true); }); });
+        p('Adds Lantern to the TV\'s input list and makes it the one the TV starts on. Takes a full TV restart to show.');
         h('Opening quickly');
         instant = st.keep && st.rewarm && st.boot === 'ready';
         r = rw();
@@ -1535,19 +1621,25 @@
       }
     }
     if (name === 'All set') {
-      p('That is everything. A few things to remember:', true);
-      p('Down from the dock opens every app and input. Up or Back closes it.');
-      p('Green adds the selected app to the dock or takes it out. Red, or holding OK, opens that app\'s options.');
-      p('Yellow starts standby. Blue opens Settings, where Reset can undo every change Lantern makes to the TV.');
+      p('Here is what you chose. Settings (the Blue button) changes any of it.', true);
+      kv($sheet, 'Location', st.city ? st.city.name : 'Not set');
+      kv($sheet, 'Appearance', { auto: 'Automatic', dark: 'Always dark', light: 'Always light' }[st.theme]);
+      kv($sheet, 'Wallpaper', st.wall.kind === 'preset' ? st.wall.preset + (st.nightWall ? ' by day, ' + st.wallNight + ' at night' : '') : 'Your own picture');
+      kv($sheet, 'Home screen', st.calm ? 'Calm, with apps in a menu' : 'Everything on screen');
+      kv($sheet, 'Dock', st.pins.length + ' pinned' + (st.dockFill === 'none' ? '' : ', topped up to ' + st.dockCount + ' with ' + (st.dockFill === 'recent' ? 'recent apps' : 'most-used apps')));
+      kv($sheet, 'Standby', st.idle ? 'After ' + (st.idle < 60 ? st.idle + ' seconds' : st.idle / 60 + (st.idle === 60 ? ' minute' : ' minutes')) : 'Off');
+      h('On the remote');
+      p((st.calm ? 'Down opens every app and input; Up or Back closes it. ' : '') + 'Green pins or unpins the selected app. Red, or holding OK, opens its options. Yellow starts standby.');
     }
 
     h('');
     r = rw();
-    last = setupStep === STEPS.length - 1;
     if (setupStep > 0) { btn(r, 'Back', null, 'slim', function () { setupGo(-1); }); }
-    f = btn(r, last ? 'Finish' : setupStep === 0 ? 'Start' : 'Next', null, '', function () { if (last) { finishSetup(); } else { setupGo(1); } });
-    if (!last) { btn(r, 'Skip setup', null, 'slim', finishSetup); }
-    if (pos && pos.r >= 0) { focusAt(pos.r, pos.c); } else { focus(f); }
+    next = btn(r, last ? 'Finish' : setupStep === 0 ? 'Start' : name === 'Where you are' && !st.city ? 'Skip for now' : 'Next', null, 'go', function () { if (last) { finishSetup(); } else { setupGo(1); } });
+    if (setupStep === 0) { btn(r, 'Skip setup', null, 'slim', finishSetup); }
+    if (pos && pos.r >= 0) { return focusAt(pos.r, pos.c); }
+    first = $sheet.querySelector('.row .b');                    // start on the step's first choice, or on Next if it has none
+    focus(first && first !== r.firstChild ? first : next);
   }
 
   /* ---------- settings ---------- */
@@ -1635,11 +1727,16 @@
       cycle(r, 'Icon size', 'dockSize', ['s', 'm', 'l'], ['Small', 'Medium', 'Large'], render);
       onoff(r, 'Glass panel behind the dock', 'dockGlass');
       r = rw();
-      btn(r, 'Empty the dock', String(st.pins.length), '', function () { st.pins = []; save(); drawBody(true); });
-      p('Press Green on an app to add it to the dock or take it out. Hold OK (or press Red) on a docked app to move it left or right. With nothing in the dock it shows the apps you open most.');
+      cycle(r, 'Fill the dock with', 'dockFill', ['recent', 'used', 'none'], ['Recently opened apps', 'Most used apps', 'Nothing: only apps I pin'], render);
+      cycle(r, 'Apps in the dock', 'dockCount', [3, 4, 5, 6, 7, 8, 9], ['3', '4', '5', '6', '7', '8', '9'], render);
+      r = rw();
+      btn(r, 'Unpin every app', String(st.pins.length), '', function () { st.pins = []; save(); render(); drawBody(true); });
+      p('Apps you pin with Green always come first. The dock is then topped up to the number above with the apps you opened most recently (or use most). Hold OK (or press Red) on a pinned app to move it left or right.');
       p('In the calm style, Down from the dock (or its last tile) opens the menu of all apps and inputs. Up from the top row, or Back, closes it.');
     }
 
+    wallPreview = name === 'Wallpaper' && st.nightWall ? wallFor : null;
+    showWall();
     if (name === 'Wallpaper') {
       r = rw();
       onoff(r, 'Different wallpaper at night', 'nightWall', function () { wallFor = 'day'; redraw(true); });
@@ -1758,6 +1855,7 @@
       });
       r = rw();
       btn(r, 'Find my location automatically', null, '', useIpLocation);
+      if (ipNote) { p(ipNote); }
       p('Automatic lookup uses your internet address, which is sent to ipapi.co. It is accurate to about a town and can be wrong; typing your town is more reliable. Your location sets the weather and the sunrise and sunset times.');
     }
 
@@ -1835,8 +1933,14 @@
         btn(r, 'Keep Lantern in memory', st.keep ? 'On' : 'Off', '', function () { sysToggle(function () { st.keep = !st.keep; }); askKeepAlive(); });
         btn(r, 'Load it again if the TV closes it', st.rewarm ? 'On' : 'Off', '', function () { sysToggle(function () { st.rewarm = !st.rewarm; }); });
         h('When the TV starts');
+        if (sys.lastInput && sys.lastInput !== selfId() && !appExists(sys.lastInput)) {
+          p('The TV is set to start on an app that is no longer installed (' + sys.lastInput + '). Switch the option below on, or the TV may start on a blank screen.');
+        }
         r = rw();
-        btn(r, 'At TV start', { off: 'Do nothing', open: 'Open Lantern', ready: 'Load Lantern in the background' }[st.boot], '', function () {
+        btn(r, 'Start the TV on Lantern', sys.lastInput === selfId() ? 'On' : 'Off', '', function () { setStartApp(sys.lastInput !== selfId(), function () { redraw(true); }); });
+        p('The TV opens Lantern itself as it starts, the same way it would open HDMI 1. Lantern is added to the input list for this, and it takes a full TV restart to show.');
+        r = rw();
+        btn(r, 'A few seconds after the TV starts', { off: 'Do nothing', open: 'Open Lantern', ready: 'Load Lantern in the background' }[st.boot], '', function () {
           sysToggle(function () { st.boot = { off: 'open', open: 'ready', ready: 'off' }[st.boot]; });
         });
         if (sys.homeApp !== selfId()) {
@@ -1847,12 +1951,13 @@
         r = rw();
         btn(r, 'Show Lantern in the TV\'s input list', st.input ? 'On' : 'Off', '', function () {
           var want = !st.input;
+          if (!want && sys.lastInput === selfId()) { toast('Switch off "Start the TV on Lantern" first: the TV starts on this input.'); return; }
           setInput(want, function (ok) {
             toast(ok ? (want ? 'Added. It can take a TV restart to appear in the input list.' : 'Removed from the input list.') : 'The TV refused that.');
             redrawIf('Remote');
           });
         });
-        p('As an input, Lantern sits next to HDMI 1 and Live TV, and a TV set to return to its last input can start on it.');
+        p('As an input, Lantern sits next to HDMI 1 and Live TV. "Start the TV on Lantern" above switches this on for you.');
       }
     }
 
@@ -1907,7 +2012,7 @@
         kv(body, 'Keep in memory', st.keep ? 'On' : 'Off');
         kv(body, 'Shown as a TV input', st.input ? 'Yes' : 'No');
         kv(body, 'TV\'s Home app', sys.homeApp ? labelFor(sys.homeApp) + ' (' + sys.homeApp + ')' : 'Not reported by this TV');
-        kv(body, 'TV starts on', sys.lastInput ? labelFor(sys.lastInput) : 'Not reported by this TV');
+        kv(body, 'TV starts on', sys.lastInput ? labelFor(sys.lastInput) + (appExists(sys.lastInput) ? '' : ' (not installed)') : 'Not reported by this TV');
         kv(body, 'Background loading', sys.noPreload ? 'Not supported on this TV' : sys.warm ? 'Running' : 'Off');
         kv(body, 'Buttons remapped by Lantern', String(Object.keys(st.binds).length));
         kv(body, 'Memory', (function () {
@@ -1931,7 +2036,7 @@
       h('The TV');
       r = rw();
       btn(r, 'Restore TV defaults', null, '', function () { restoreTV(function () { redrawIf('Reset'); }); });
-      p('Gives the Home button back to LG Home, puts back every button Lantern remapped (other LG Input Hook settings are kept), undoes every Tune-up change, removes the start-up script and helper scripts, stops asking the TV to keep Lantern in memory, gives the TV\'s Home app setting back if Lantern took it, and takes Lantern out of the input list. Lantern stays installed as an ordinary app.');
+      p('Gives the Home button back to LG Home, puts back every button Lantern remapped (other LG Input Hook settings are kept), undoes every Tune-up change, removes the start-up script and helper scripts, stops asking the TV to keep Lantern in memory, gives the TV\'s Home app and start-up settings back if Lantern took them, and takes Lantern out of the input list. Lantern stays installed as an ordinary app.');
       h('Lantern');
       r = rw();
       btn(r, 'Reset Lantern\'s look', null, '', function () {
@@ -1963,7 +2068,7 @@
       b = btn(r, '', null, 'pic' + (on ? ' on' : ''), function () {
         if (forNight) { set('wallNight', w[0]); } else { set('wall', { kind: 'preset', preset: w[0], src: '' }); }
       });
-      b.style.backgroundImage = w[1];
+      b.style.backgroundImage = w[1].replace('url("walls/', 'url("walls/t-');     // small copies: nine full pictures would take about 70 MB to show
       b.appendChild(el('span', null, w[0]));
     });
   }
@@ -2009,7 +2114,7 @@
       }
       if (mode === 'setup' && code === KEY.BLUE) { return true; }
       if (code === KEY.BACK || code === KEY.ESC || code === KEY.BLUE) {
-        if (mode === 'setup') { if (typing) { move(0, 1); } else if (setupStep > 0) { setupGo(-1); } }
+        if (mode === 'setup') { if (typing) { move(1, 0); } else if (setupStep > 0) { setupGo(-1); } }
         else if (mode === 'learn' && learn && learn.step === 'trial') { undoLearn(); }
         else if (mode === 'learn' || pickFor) { openSettings(TABS.indexOf('Remote')); }
         else { closeOverlay(); }

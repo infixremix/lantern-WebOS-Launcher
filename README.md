@@ -22,7 +22,7 @@ The screenshots are from my desktop test, so the tiles show placeholder icons.
 - **Light and dark.** Automatic by sunrise and sunset where you are, always dark, or always light, with an option to go dark in dull weather. A different wallpaper can be used at night, and standby can go black with a dim clock at night.
 - **Location.** Type your town, or let Lantern look it up from your internet address when you ask it to.
 - **Calm home screen.** A picture background, a large clock with the date and weather, and a dock of your apps. Press Down (or the dock's last tile) and a full menu of every app and input opens over it; Up or Back closes it. A classic style with everything on screen is one setting away.
-- **Dock.** App icons or wide cards in three sizes, at the bottom or the top, centred or left, with or without a glass panel. With nothing pinned it shows the apps you open most.
+- **Dock.** Apps you pin come first, and the dock tops itself up with the apps you opened most recently (or use most) to a number you choose, five by default. App icons or wide cards in three sizes, at the bottom or the top, centred or left, with or without a glass panel.
 - **Per-app options.** Rename an app, give it an icon from a web address, recolour its tile, move it along the dock or hide it.
 - **Widgets.** Up to five: clock, weather, three-day forecast, calendar, world clock, countdown, note, photo and TV memory.
 - **Wallpaper.** Nine bundled pictures for day and night, plain black and gradients, online photos, any picture address, or a picture from USB or TV storage.
@@ -30,7 +30,7 @@ The screenshots are from my desktop test, so the tiles show placeholder icons.
 - **TV inputs.** Live TV and HDMI tiles, with a live preview while one is selected.
 - **Home button and remapping.** Make the Home button open Lantern, and remap other buttons: press the button, see what it does now, choose a new action, then confirm it works within 30 seconds or it is put back.
 - **Instant Home.** Loads Lantern in the background after the TV starts, asks the TV to keep it in memory, and loads it again if the TV closes it, so the Home button resumes it instead of starting it cold. See [docs/WARM-START.md](docs/WARM-START.md).
-- **Home app and TV input.** Make Lantern the TV's own Home app where the TV supports it, or map the Home button through LG Input Hook (one or the other, never both), and list Lantern next to HDMI 1 in the input list.
+- **Home app and start-up.** Make Lantern the TV's own Home app where the TV supports it, or map the Home button through LG Input Hook (one or the other, never both). "Start the TV on Lantern" adds it to the input list and makes it the input the TV starts on.
 - **Tune-up.** Close apps running in the background, switch off the TV's ad, promotion and tracking settings, and stop apps being preloaded. Each original value is saved first.
 - **System information.** Root status, Homebrew Channel and LG Input Hook status, model, webOS version, firmware, memory and IP address.
 - **Restore TV defaults.** One button undoes every change Lantern made outside its own folder.
@@ -41,10 +41,10 @@ I have tested Lantern on one TV, my own: **LG 43LM6300PLA**, webOS 4.10.2, roote
 
 | | What |
 | --- | --- |
-| Confirmed on my TV | The home screen and app grid; app icons (loaded through the root symlink method); weather; widgets, including the TV memory widget, which needs root; the bottom dock; standby; Lantern set as the TV's Home app (`defaultApps.home`) with the Home key opening it; Lantern registered as a TV input. |
+| Confirmed on my TV | The calm home screen with its dock and button hints; the earlier grid layout; app icons (loaded through the root symlink method, see the known issue below); weather; widgets, including the TV memory widget, which needs root; standby; the setup steps opening and running; Lantern set as the TV's Home app (`defaultApps.home`) with the Home key opening it; Lantern in the TV's input list, and the TV starting on Lantern after a full restart once it is the TV's last input. That start-up route is what my TV needed; other models may differ. |
 | Working, but not written down | Most of the remaining features have worked on my TV, but I did not record which ones, so I list them as unconfirmed below. |
-| Known issue on my TV | Opening Lantern cold (Home after it was closed, or waking from standby) shows LG's own loading cover for about 4 to 5 seconds, and LG Home has sometimes appeared as well. `noSplashOnLaunch` and `spinnerOnLaunch` in `appinfo.json` do not remove that cover. Instant Home is there to avoid cold starts; I have not confirmed it on the TV yet. |
-| Not yet confirmed on a TV | The setup steps, light and dark, day and night wallpapers, location lookup, Instant Home, the calm home screen with its apps menu, button remapping and Tune-up. My automated tests cover these, but they run against a fake TV. |
+| Known issues on my TV | With widgets on, they vanished instead of fading when standby started (I reworked this in 1.0.1 and have not confirmed it). On a first install, app icons only appeared after Lantern was restarted; 1.0.1 reloads itself once when that happens, which I have not confirmed on the TV. Fading into standby was instant in 1.0.0 (fixed in 1.0.1, also unconfirmed). Opening Lantern cold (Home after it was closed, or waking from standby) shows LG's own loading cover for about 4 to 5 seconds, and LG Home has sometimes appeared as well. `noSplashOnLaunch` and `spinnerOnLaunch` in `appinfo.json` do not remove that cover. Instant Home is there to avoid cold starts; I have not confirmed it on the TV yet. |
+| Not yet confirmed on a TV | The reworked setup steps and the "Start the TV on Lantern" switch in 1.0.1, light and dark, day and night wallpapers, location lookup, Instant Home, the apps menu, button remapping and Tune-up. My automated tests cover these, but they run against a fake TV. |
 
 ## Requirements
 
@@ -56,7 +56,7 @@ I have tested Lantern on one TV, my own: **LG 43LM6300PLA**, webOS 4.10.2, roote
 Build the package (below) or download an `.ipk` from Releases, then install it with [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop) or:
 
 ```sh
-ares-install -d tv com.infixremix.lantern_1.0.0_all.ipk
+ares-install -d tv com.infixremix.lantern_1.0.1_all.ipk
 ```
 
 ## Remote
@@ -90,7 +90,7 @@ See [docs/HOW-IT-WORKS.md](docs/HOW-IT-WORKS.md) for the full list of commands a
   - its own entries in LG Input Hook's `/home/root/.config/lginputhook/keybinds.json` (the file is backed up once to `keybinds.json.lantern-bak`, and entries Lantern replaced are put back);
   - `/var/lib/webosbrew/init.d/55-lantern` and `/var/lib/webosbrew/lantern/`;
   - the "Lantern" entry in the TV's input list;
-  - the TV's Home app setting, if Lantern changed it (the previous value is put back);
+  - the TV's Home app setting and its start-up input (`lastInputApp`), if Lantern changed them (the previous values are put back);
   - the TV settings and preload choices changed in Tune-up.
 - It never stops system services, uninstalls apps or touches firmware partitions.
 

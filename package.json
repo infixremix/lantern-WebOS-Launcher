@@ -1,6 +1,6 @@
 {
   "name": "lantern-webos",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "private": true,
   "description": "Lantern: a customisable home screen for rooted LG webOS TVs",
   "license": "MIT",

@@ -61,6 +61,10 @@ luna://com.webos.settingsservice/setSystemSettings
 
 The whole `defaultApps` object is read first and written back with only `home` changed, and the previous value is kept so it can be restored. When Lantern becomes the Home app it removes its own Home entry from LG Input Hook, because both together make Home fire twice.
 
+## Starting the TV on Lantern
+
+The TV opens its last input when it starts. "Start the TV on Lantern" does two things in order: it adds Lantern to the input list (`eim/addDevice`), and only if that worked it sets `lastInputApp` (settings: general) to Lantern, keeping the old value. It takes a full TV restart to show. Switching it off puts the old input back, or Live TV if the old one is no longer installed. This is the route that worked on the LG 43LM6300PLA; other models may differ.
+
 ## Opening quickly
 
 `/var/lib/webosbrew/lantern/open.sh` opens Lantern. With "Keep in memory" on it launches with `"keepAlive":true` and falls back to a plain launch if the TV refuses that.
@@ -89,7 +93,7 @@ Lantern itself does only cheap work when it is shown again (clock, wallpaper, fo
 
 ## Restore TV defaults
 
-In order: Lantern's key entries are removed or replaced by what was there before; Tune-up settings and preloads are put back; the start-up script and helper folder are deleted and the helpers stopped; the TV's Home app setting is put back if Lantern changed it; Lantern is removed from the input list; `/tmp/lantern-*` is cleared.
+In order: Lantern's key entries are removed or replaced by what was there before; Tune-up settings and preloads are put back; the start-up script and helper folder are deleted and the helpers stopped; the TV's Home app setting and start-up input are put back if Lantern changed them; Lantern is removed from the input list; `/tmp/lantern-*` is cleared.
 
 ## Performance choices
 
@@ -97,3 +101,5 @@ In order: Lantern's key entries are removed or replaced by what was there before
 - One click listener and one hover listener serve every tile and button.
 - While another app is in front, timers stop and the wallpaper picture is released.
 - Pictures are loaded off screen and swapped in once they arrive.
+- Only one full-size wallpaper is held at a time. The wallpaper chooser uses small copies of the bundled pictures (`walls/t-*.jpg`), because showing nine full pictures at once would take about 70 MB.
+- Loaded in the background, Lantern holds no wallpaper and runs no timers until it is shown.

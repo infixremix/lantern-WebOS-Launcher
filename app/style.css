@@ -17,7 +17,7 @@ html, body {
   position: absolute; left: 0; top: 0; width: 100%; height: 100%; padding-top: 38px;
   display: -webkit-flex; display: flex; -webkit-flex-direction: column; flex-direction: column;
 }
-#bar, #widgets, #dock, #legend { -webkit-transition: opacity .35s; transition: opacity .35s; }
+#bar, #widgets, #dock, #legend { -webkit-transition: opacity .45s ease, -webkit-transform .45s ease; transition: opacity .45s ease, transform .45s ease; }
 
 /* ---- top bar (classic) and hero clock (calm) ---- */
 #bar { -webkit-order: 0; order: 0; -webkit-flex: 0 0 62px; flex: 0 0 62px; position: relative; margin: 0 84px; }
@@ -129,13 +129,20 @@ body:not(.calm).dock-bottom #legend { display: none; }
 body:not(.no-hints):not(.dock-bottom):not(.calm) #stage { padding-bottom: 54px; }
 
 /* ---- standby ---- */
-#lock { position: absolute; left: 0; right: 0; top: 170px; text-align: center; opacity: 0; pointer-events: none; text-shadow: 0 2px 30px rgba(0,0,0,.5); -webkit-transition: opacity 1s; transition: opacity 1s; }
+#lock { position: absolute; left: 0; right: 0; top: 170px; text-align: center; opacity: 0; pointer-events: none; text-shadow: 0 2px 30px rgba(0,0,0,.5); -webkit-transition: opacity .5s ease; transition: opacity .5s ease; }
 #lockdate { font-size: 38px; font-weight: 500; color: rgba(245,245,247,.9); }
 #locktime { font-size: 230px; font-weight: 200; line-height: 1.05; letter-spacing: -6px; }
 #lockwx { font-size: 34px; color: rgba(245,245,247,.9); }
-.quiet #bar, .quiet #dock, .quiet #rows, .quiet #legend, .quiet #widgets { opacity: 0 !important; pointer-events: none; }
-.quiet #lock { opacity: 1; }
-.quiet.q-widgets #widgets { opacity: 1 !important; position: absolute; left: 0; right: 0; bottom: 90px; padding: 0; -webkit-justify-content: center; justify-content: center; }
+/* no !important here: Chromium 53 does not animate towards an !important value, which made standby snap in but fade out */
+.quiet #bar, .quiet #dock, .quiet #rows, .quiet #legend { opacity: 0; pointer-events: none; -webkit-transition-duration: .9s; transition-duration: .9s; }
+.quiet #dock, .quiet #legend { -webkit-transform: translateY(36px); transform: translateY(36px); }
+.quiet #bar { -webkit-transform: translateY(-18px); transform: translateY(-18px); }
+.quiet #lock { opacity: 1; -webkit-transition: opacity 1.1s ease .35s; transition: opacity 1.1s ease .35s; }
+/* widgets in standby: faded out where they are, moved while invisible, then faded in along the bottom (see sleep and wake) */
+#widgets.fade { opacity: 0; -webkit-transition: opacity .45s ease; transition: opacity .45s ease; }
+#widgets.fade.now { -webkit-transition: none; transition: none; }
+#widgets.standby { position: absolute; left: 0; right: 0; bottom: 90px; padding: 0; -webkit-justify-content: center; justify-content: center; opacity: 0; -webkit-transition: none; transition: none; }
+#widgets.standby.in { opacity: 1; -webkit-transition: opacity .9s ease; transition: opacity .9s ease; }
 .quiet.q-black #wall { opacity: 0; }
 .quiet.q-black #shade { display: none; }
 .quiet.q-black #lock { opacity: .45; }
@@ -224,3 +231,18 @@ input.b.focus { background-color: #f5f5f7; color: #111; }
 
 /* picture buttons keep their picture whatever the theme or focus */
 .b.pic, .b.pic.focus, .light .b.pic, .light .b.pic.focus { background-color: #111; background-size: cover; background-position: center; }
+
+/* ---- setup steps ---- */
+#sheet.setup { width: 1280px; margin-left: -640px; top: 70px; bottom: 70px; padding: 40px 56px; }
+#sheet.setup h1 { font-size: 46px; margin-bottom: 18px; }
+#sheet.setup p.big { font-size: 27px; line-height: 1.4; margin-bottom: 14px; }
+#sheet.setup .b { padding: 19px 22px; }
+#sheet.setup .b.pic { padding: 0; height: 116px; }
+/* Next is marked as the main button, but only the selected button is ever solid */
+#sheet.setup .b.go { background-color: rgba(127,127,127,.34); font-weight: 600; box-shadow: inset 0 0 0 2px rgba(127,127,127,.55); }
+#sheet.setup .b.go.focus { background-color: #f5f5f7; box-shadow: none; }
+.light #sheet.setup .b.go.focus { background-color: #1c1c1e; }
+.steps { margin: 0 8px 22px; }
+.steps i { display: inline-block; width: 46px; height: 6px; margin-right: 8px; border-radius: 3px; background: rgba(127,127,127,.3); }
+.steps i.done { background: rgba(127,127,127,.75); }
+.steps i.now { background: var(--accent); }
