@@ -2,6 +2,7 @@ window.__errs=[];window.onerror=function(m,s,l,c){window.__errs.push(m+" @"+l+":
 
 var H=location.hash.replace('#','').split(','), SC=H[0], OPT=H.slice(1);
 function opt(o){return OPT.indexOf(o)>=0;}
+function opt2(n,d){return opt(n)?400:d;}
 window.__auto=opt('autoon')?'on':'off';window.__last=opt('lastgone')?'com.solly.lantern':'com.webos.app.livetv';window.__home=opt('homeset')?'com.infixremix.lantern':'com.webos.app.home';window.__cmds=[];window.__free=402000;window.__run=['com.infixremix.lantern','com.fake.app0','com.fake.app1','com.webos.app.voice'];window.__set={'general/homePromotion':true,'option/livePromotion':'on','option/livePlus':'on','general/adCookie':'on','option/dbgLogUpload':false,'option/menuTransparency':'on'};window.__pre=[{id:'com.webos.app.home',preloadMode:'full'},{id:'com.webos.app.livetv',preloadMode:'full'},{id:'com.webos.app.browser',preloadMode:'semi-full'},{id:'com.fake.app1',preloadMode:'semi-full'}];window.__luna=[];window.__launched=[];window.__polls=0;
 window.__kb=opt('kbempty')?'':'{"1086":{"action":"launch","id":"com.other.app"}}';
 window.__press=opt('fmt2')?'id => 1043 state => 1':'[INFO] lginput_uinput_send_button called: keyid=42, state=1 uinput_code=1037';
@@ -31,9 +32,10 @@ PalmServiceBridge.prototype.call=function(uri,p){var self=this,q=JSON.parse(p),c
      out.stdoutString=o+'@end\n'; }
  else if(/meminfo/.test(c)) out.stdoutString='MemTotal:1482000\nMemAvailable:402000\nup:93600\n';
  setTimeout(function(){self.onservicecallback(JSON.stringify(out));},5);};
-window.XMLHttpRequest=function(){var x={readyState:0,status:0,responseText:'',open:function(m,u){this.u=u;},send:function(){var s=this;setTimeout(function(){s.readyState=4;s.status=200;
+window.XMLHttpRequest=function(){var x={readyState:0,status:0,responseText:'',open:function(m,u){this.u=u;},send:function(){var s=this;setTimeout(function(){s.readyState=4;if(/open-meteo\.com\/v1\/forecast/.test(s.u)){window.__wxAsk=(window.__wxAsk||0)+1;if(opt('netdead')||(opt('netslow')&&window.__wxAsk<=3)){s.status=0;s.onreadystatechange();return;}}s.status=200;
   s.responseText=/ipapi/.test(s.u)?JSON.stringify({city:'Bristol',latitude:51.45,longitude:-2.59}):/geocoding/.test(s.u)?JSON.stringify({results:[{name:'Gloucester',admin1:'England',country:'United Kingdom',latitude:51.86,longitude:-2.24}]}):JSON.stringify({current_weather:{temperature:11.6,weathercode:3},daily:{time:['2026-11-11','2026-11-12','2026-11-13','2026-11-14'],weathercode:[3,61,2,0],temperature_2m_max:[13.2,12,10,9],temperature_2m_min:[7.9,6,4,3]}});
   s.onreadystatechange();},10);}};return x;};
+if(opt('wxcache'))localStorage.setItem('lantern.wx',JSON.stringify({at:Date.now()-opt2('wxold',20)*60000,key:'51.86,-2.24,C',wx:{temp:9,code:2,text:'Partly cloudy',days:[{name:'Today',hi:10,lo:5,text:'Partly cloudy'}],hi:10,lo:5},rise:0,set:0}));
 var seedState={setupDone:!opt('fresh'),pins:['com.fake.app0','com.fake.app1','com.fake.app2','com.fake.app3','com.fake.app7'],city:{name:'Gloucester',lat:51.86,lon:-2.24}};
 if(opt('fresh')){delete seedState.city;seedState.pins=[];}
 if(opt('nopins')){seedState.pins=[];seedState.last={'com.fake.app17':5,'com.fake.app9':9};seedState.use={'com.fake.app17':1,'com.fake.app9':1,'com.fake.app3':4};}

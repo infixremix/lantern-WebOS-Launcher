@@ -14,7 +14,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.3';
+  var VERSION = '1.0.4';
   var HB = 'luna://org.webosbrew.hbchannel.service';
   var SAM = 'luna://com.webos.applicationManager';
   var EIM = 'luna://com.webos.service.eim';
@@ -102,6 +102,8 @@
   var bridges = [], sys = null, tune = null, tvInfo = null, wx = null, tvStat = null, cityHits = [], wallHits = null, pickFor = null;
   var previewTimer = null, toastTimer = null, idleTimer = null, shiftTimer = null, okTimer = null, tickTimer = null, wxTimer = null;
   var slideTimer = null, slideAt = 0, night = false, dark = true, setupStep = 0, pendingSetup = false, wallFor = 'day', wallPreview = null;
+  var wxAt = 0, wxSeq = 0, wxTries = 0, wxRetry = null, tvTries = 0, tvRetry = null;
+  var WX_WAIT = [5, 10, 20, 40, 60, 120];      // seconds before each retry of a failed forecast request; after the last one it stops
   var menuTimer = null, setupMark = '', restartTimer = null;
   var iconOk = 0, iconFail = 0, pendingReload = false, ipNote = '';
   var quiet = false, okDown = false, okHeld = false, lastRefresh = 0, lastDay = -1, wallShown = '', selfLaunchAt = 0;
@@ -625,10 +627,15 @@
     for (i = 0; i < n.length; i++) { if (n[i].__upd) { n[i].__upd(d); } }
   }
   function tvStatus() {
+    clearTimeout(tvRetry);
     exec("awk '/^MemTotal|^MemFree|^MemAvailable|^Buffers|^Cached/{print $1 $2}' /proc/meminfo; echo up:$(cut -d. -f1 /proc/uptime)", function (err, out) {
       var m = {}, free, up;
       out.split('\n').forEach(function (l) { var p = l.split(':'); if (p.length === 2) { m[p[0]] = parseInt(p[1], 10); } });
-      if (!m.MemTotal) { return; }
+      if (!m.MemTotal) {            // right after the TV starts, Homebrew Channel may not be answering yet: ask again shortly
+        if (hasWidget('tv') && tvTries < 6) { tvTries += 1; tvRetry = setTimeout(tvStatus, 5000 * tvTries); }
+        return;
+      }
+      tvTries = 0;
       free = m.MemAvailable || (m.MemFree || 0) + (m.Buffers || 0) + (m.Cached || 0);
       up = m.up || 0;
       tvStat = { total: Math.round(m.MemTotal / 1024), free: Math.round(free / 1024),
@@ -809,15 +816,35 @@
     };
     try { x.open('GET', url, true); x.timeout = 12000; x.send(); } catch (e) { cb(null); }
   }
-  function weather() {
-    var need = st.city && (st.showWeather || hasWidget('weather') || hasWidget('forecast'));
-    if (!st.city) { $('lockwx').textContent = ''; }
-    if (!need && !(st.city && st.idleWx)) { $('weather').textContent = ''; if (!st.city) { wx = null; updateWidgets(); } return; }
+  /* The forecast is held in memory only and is never saved. It is asked for when Lantern starts, every 30 minutes,
+     when Lantern is shown again without a recent one, and when the TV reports its network came up.
+     A request that fails (the network is often not up yet when the TV has just started) is retried after
+     5, 10, 20, 40, 60 and 120 seconds, six retries in all, and then Lantern stops asking until one of those events. */
+  function wxKey() { return st.city ? [st.city.lat, st.city.lon, st.unitF ? 'F' : 'C'].join(',') : ''; }
+  function showWx() {
+    $('weather').textContent = wx && st.city ? st.city.name + '  ' + wx.temp + '°  ' + wx.text + (wx.hi != null ? '   ' + wx.hi + '° / ' + wx.lo + '°' : '') : '';
+    $('lockwx').textContent = wx && st.city ? wx.temp + '°  ' + wx.text + '   ' + st.city.name : '';
+    updateWidgets();
+  }
+  function wxStale(minutes) { return !wx || Date.now() - wxAt > minutes * 60 * 1000; }
+  function wxAgain() {
+    clearTimeout(wxRetry);
+    if (wxTries >= WX_WAIT.length) { return; }       // out of retries: wait for the next half hour, a return to Lantern or the network
+    wxRetry = setTimeout(askWeather, WX_WAIT[wxTries] * 1000);
+    wxTries += 1;
+  }
+  function weather() { wxTries = 0; askWeather(); }       // a fresh request, with a fresh set of retries
+  function askWeather() {
+    var need = st.city && (st.showWeather || hasWidget('weather') || hasWidget('forecast')), seq, key = wxKey();
+    clearTimeout(wxRetry);
+    if (!need && !(st.city && st.idleWx)) { $('weather').textContent = ''; $('lockwx').textContent = ''; if (!st.city) { wx = null; updateWidgets(); } return; }
+    seq = ++wxSeq;               // an answer to an older request (another place, another unit) is ignored
     getJSON('https://api.open-meteo.com/v1/forecast?latitude=' + st.city.lat + '&longitude=' + st.city.lon +
             '&current_weather=true&daily=weathercode,temperature_2m_max,temperature_2m_min,sunrise,sunset&timezone=auto' +
             (st.unitF ? '&temperature_unit=fahrenheit' : ''), function (r) {
       var w, d, i, date;
-      if (!r || !r.current_weather) { return; }       // keep the last reading
+      if (seq !== wxSeq || key !== wxKey()) { return; }
+      if (!r || !r.current_weather) { wxAgain(); return; }       // keep the last reading and try again soon
       w = r.current_weather; d = r.daily || {};
       wx = { temp: Math.round(w.temperature), code: w.weathercode, text: WEATHER[w.weathercode] || '', days: [] };
       if (d.sunrise && d.sunset && d.sunrise[0] && d.sunset[0]) {     // local times such as 2026-11-11T07:21
@@ -831,9 +858,8 @@
                        lo: Math.round(d.temperature_2m_min[i]), text: WEATHER[(d.weathercode || [])[i]] || '' });
       }
       if (wx.days.length) { wx.hi = wx.days[0].hi; wx.lo = wx.days[0].lo; }
-      $('weather').textContent = st.city.name + '  ' + wx.temp + '°  ' + wx.text + (wx.hi != null ? '   ' + wx.hi + '° / ' + wx.lo + '°' : '');
-      $('lockwx').textContent = wx.temp + '°  ' + wx.text + '   ' + st.city.name;
-      updateWidgets();
+      wxAt = Date.now();
+      showWx();
       if (updateNight()) { applyLook(); }
     });
   }
@@ -2257,13 +2283,17 @@
     if (pendingSetup && !mode) { pendingSetup = false; openSetup(0); }
     if (!mode) { focusFirst(); if (!cur) { render(); } }
     if (Date.now() - lastRefresh > 10 * 60 * 1000) { refreshApps(); weather(); }
+    else if (wxStale(30)) { weather(); }       // nothing yet, or an old reading: ask now, not at the next half hour
+    if (hasWidget('tv')) { tvTries = 0; tvStatus(); }
     if (learn && learn.step === 'wait') { pollLearn(); }
     if (params && params.standby) { sleep(); }
   }
 
   load();
+  try { localStorage.removeItem('lantern.wx'); } catch (e0) {}      // a forecast saved by an unreleased build
   applyLook();
   drawWidgets();
+  showWx();
   tick();
   render();                      // instant, from the cached app list
   focusFirst();
@@ -2302,6 +2332,7 @@
     if (Date.now() - selfLaunchAt < 4000) { selfLaunchAt = 0; return; }   // our own keep-in-memory request, not the user
     comeToFront(launchParams(e));
   });
+  window.addEventListener('online', function () { if (wxStale(10)) { weather(); } });       // the TV reports its network came up
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) { hidePreview(); stopTimers(); releaseWall(); if (quiet) { wake(); clearTimeout(idleTimer); } }
     else { comeToFront(); }
