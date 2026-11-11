@@ -14,7 +14,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.1';
+  var VERSION = '1.0.2';
   var HB = 'luna://org.webosbrew.hbchannel.service';
   var SAM = 'luna://com.webos.applicationManager';
   var EIM = 'luna://com.webos.service.eim';
@@ -88,7 +88,7 @@
   ];
 
   // LOOK = everything "Reset Lantern's look" puts back
-  var LOOK = { theme: 'auto', dullDark: false, nightWall: true, wallNight: 'Night ridge', idleNight: 'same',
+  var LOOK = { saveMem: 'auto', theme: 'auto', dullDark: false, nightWall: true, wallNight: 'Night ridge', idleNight: 'same',
                accent: 0, size: 'm', shape: 'square', names: 'focus', motion: true, showBar: true, showHints: true,
                calm: true, dockFill: 'recent', dockCount: 5, dockPos: 'bottom', dockAlign: 'center', dockSize: 'm', dockGlass: true, widgetAlign: 'left',
                wall: { kind: 'preset', preset: 'Morning ridge', src: '' }, wallEvery: 'day', dim: 0,
@@ -96,12 +96,13 @@
                h24: true, showDate: true, showWeather: true, unitF: false,
                idle: 30, idleBg: 'wall', idleEvery: 300, idleClock: true, idleDate: true, idleWx: true, idleWidgets: false, idleDim: true };
   var BASE = { use: {}, last: {}, pins: [], hidden: [], names: {}, colors: {}, icons: {}, widgets: [], city: null,
-               binds: {}, prev: {}, boot: 'off', watch: false, keep: false, rewarm: false, input: false, homeApp: { on: false, prev: '' }, startApp: { on: false, prev: '' }, iconReload: false, setupDone: false, tune: { orig: {}, preOff: [] }, apps: [], linked: false };
+               binds: {}, prev: {}, boot: 'off', watch: false, keep: false, rewarm: false, input: false, homeApp: { on: false, prev: '' }, startApp: { on: false, prev: '' }, iconReload: false, memTotal: 0, setupDone: false, tune: { orig: {}, preOff: [] }, apps: [], linked: false };
   var st = {};
   var cur = null, mode = null /* null | 'settings' | 'menu' | 'learn' */, tab = 0;
   var bridges = [], sys = null, tune = null, tvInfo = null, wx = null, tvStat = null, cityHits = [], wallHits = null, pickFor = null;
   var previewTimer = null, toastTimer = null, idleTimer = null, shiftTimer = null, okTimer = null, tickTimer = null, wxTimer = null;
   var slideTimer = null, slideAt = 0, night = false, dark = true, setupStep = 0, pendingSetup = false, wallFor = 'day', wallPreview = null;
+  var menuTimer = null;
   var iconOk = 0, iconFail = 0, pendingReload = false, ipNote = '';
   var quiet = false, okDown = false, okHeld = false, lastRefresh = 0, lastDay = -1, wallShown = '', selfLaunchAt = 0;
   var learn = null;
@@ -350,6 +351,13 @@
     px('--tw', g.tw); px('--cw', g.cw); px('--ch', g.ch);
     px('--dtw', d.tw); px('--dcw', d.cw); px('--dch', d.ch);
     px('--gp', Math.floor((1920 - g.cols * g.tw) / 2));
+    // The apps menu is taken out of the page while it is closed. Left in place (only moved and made transparent)
+    // it kept a full-screen graphics layer alive all the time, and this TV has under 1 MB of that memory to spare.
+    clearTimeout(menuTimer);
+    if (!st.calm) { $rows.style.display = ''; }
+    else if (menuOpen()) { if ($rows.style.display !== 'block') { $rows.style.display = 'block'; void $rows.offsetWidth; } }
+    else if ($rows.style.display === 'block') { menuTimer = setTimeout(function () { if (!menuOpen()) { $rows.style.display = 'none'; } }, 260); }
+    else { $rows.style.display = 'none'; }
     document.body.className = [
       dark ? '' : 'light', st.names === 'always' ? 'names-always' : '', st.motion ? '' : 'no-motion', sq ? 'shape-square' : '',
       st.showBar ? '' : 'no-bar', st.showHints ? '' : 'no-hints',
@@ -378,16 +386,16 @@
   }
   function wallUrl() {
     var w = curWall();
-    if (w.kind === 'online') { return 'https://picsum.photos/seed/lantern-' + encodeURIComponent(onlineSeed()) + '/1920/1080'; }
+    if (w.kind === 'online') { return 'https://picsum.photos/seed/lantern-' + encodeURIComponent(onlineSeed()) + '/' + photoSize(); }
     return w.kind !== 'preset' && w.src ? w.src : '';
   }
   // Pictures are loaded off screen first and only swapped in once they have
   // arrived, so a slow or failed download never leaves a blank background.
   function showWall() {
-    var url = wallUrl(), want = url || 'preset:' + curWall().preset, img;
+    var url = wallUrl(), want = (url || 'preset:' + curWall().preset) + (lowMem() ? ':s' : ''), img;
     if (document.hidden) { return; }                // nothing to show: do not hold a picture in memory
     if (want === wallShown) { return; }
-    if (!url) { wallShown = want; $('wall').style.backgroundImage = wallCss(curWall().preset); return; }
+    if (!url) { wallShown = want; $('wall').style.backgroundImage = sized(wallCss(curWall().preset)); return; }
     if (!wallShown) { $('wall').style.backgroundImage = wallCss('Black'); }
     img = new Image();
     img.onload = function () {
@@ -398,6 +406,18 @@
     img.onerror = function () { if (wallUrl() === url && mode === 'settings') { toast('That picture could not be loaded.'); } };
     img.src = url;
   }
+  // On a TV with little memory a 1280x720 picture is used instead of 1920x1080: under half the memory, in the app and on the graphics side.
+  function lowMem() { return st.saveMem === 'on' || (st.saveMem === 'auto' && st.memTotal > 0 && st.memTotal < 1000); }
+  function sized(css) { return lowMem() ? css.replace('url("walls/', 'url("walls/s-') : css; }
+  function photoSize() { return lowMem() ? '1280/720' : '1920/1080'; }
+  function readMemory() {
+    exec("awk '/^MemTotal/{print $2}' /proc/meminfo", function (err, out) {
+      var mb = Math.round(parseInt(out, 10) / 1024), was = lowMem();
+      if (!mb || mb === st.memTotal) { return; }
+      st.memTotal = mb; save();
+      if (lowMem() !== was) { wallShown = ''; showWall(); }
+    });
+  }
   function wallCss(name) {
     var i;
     for (i = 0; i < WALLS.length; i++) { if (WALLS[i][0] === name) { return WALLS[i][1]; } }
@@ -407,11 +427,11 @@
   function nextSlide() {
     var url, img;
     if (!quiet) { return; }
-    if (st.idleBg === 'online') { url = 'https://picsum.photos/seed/lantern-s' + Date.now() + '/1920/1080'; }
+    if (st.idleBg === 'online') { url = 'https://picsum.photos/seed/lantern-s' + Date.now() + '/' + photoSize(); }
     else if (st.idleBg === 'pictures') {
       // daytime pictures by day, the darker ones at night
       var pool = PICTURES.filter(function (n) { return (DAY_PICTURES.indexOf(n) >= 0) !== night; });
-      slideAt = (slideAt + 1) % pool.length; url = /"(.*)"/.exec(wallCss(pool[slideAt]))[1];
+      slideAt = (slideAt + 1) % pool.length; url = /"(.*)"/.exec(sized(wallCss(pool[slideAt])))[1];
     }
     else { return; }
     img = new Image();
@@ -855,10 +875,11 @@
          'echo @logs; ls /tmp/lginput-hook-*.log 2>/dev/null; ' +
          'echo @dflt; luna-send -n 1 ' + SET + '/getSystemSettings \'{"category":"general","keys":["defaultApps"]}\' 2>/dev/null; echo; ' +
          'echo @last; luna-send -n 1 ' + SET + '/getSystemSettings \'{"category":"general","keys":["lastInputApp"]}\' 2>/dev/null; echo; ' +
+         'echo @auto; luna-send -n 1 ' + SET + '/getSystemSettings \'{"category":"general","keys":["homeAutoLaunch"]}\' 2>/dev/null; echo; ' +
          'echo @flag; [ -f ' + HELP + '/no-preload ] && echo nopreload; ' +
          'echo @warm; kill -0 $(cat ' + PID2 + ' 2>/dev/null) 2>/dev/null && echo on; ' +
          'echo @mem; awk \'/^MemTotal|^MemAvailable|^MemFree/{print $1 $2}\' /proc/meminfo; echo @end', function (err, out) {
-      var part = {}, name = null, dflt = null, last = null;
+      var part = {}, name = null, dflt = null, last = null, auto = null;
       out.split('\n').forEach(function (line) {
         var m = /^@(\w+)$/.exec(line);
         if (m) { name = m[1]; part[name] = []; } else if (name) { part[name].push(line); }
@@ -868,7 +889,9 @@
               hookBoot: /inputhook/i.test(text('init')), hookLogs: text('logs') !== '', init: text('init'),
               hb: (/"version"\s*:\s*"([^"]+)"/.exec(text('hb')) || [])[1] || '',
               ip: text('ip').replace(/\n/g, ', '), watch: text('watch') === 'on', os: text('os'), mem: text('mem'),
-              noPreload: text('flag') === 'nopreload', warm: text('warm') === 'on', defaultApps: null, homeApp: '', lastInput: '' };
+              noPreload: text('flag') === 'nopreload', warm: text('warm') === 'on', defaultApps: null, homeApp: '', lastInput: '', autoHome: '' };
+      try { auto = JSON.parse(text('auto')); } catch (e3) {}
+      if (auto && auto.returnValue !== false && auto.settings && typeof auto.settings.homeAutoLaunch === 'string') { sys.autoHome = auto.settings.homeAutoLaunch; }
       try { dflt = JSON.parse(text('dflt')); } catch (e) {}
       try { last = JSON.parse(text('last')); } catch (e2) {}
       if (dflt && dflt.returnValue !== false && dflt.settings && dflt.settings.defaultApps && typeof dflt.settings.defaultApps === 'object') {
@@ -1049,22 +1072,34 @@
   // so this adds it there first, and only then names it as the last input. The old value is kept.
   function setStartApp(on, cb) {
     var id = selfId(), back;
-    function write(value, done) {
-      exec("luna-send -n 1 " + SET + "/setSystemSettings '" + JSON.stringify({ category: 'general', settings: { lastInputApp: value } }) + "'", function (err, out) {
+    function write(key, value, done) {
+      var o = {}; o[key] = value;
+      exec("luna-send -n 1 " + SET + "/setSystemSettings '" + JSON.stringify({ category: 'general', settings: o }) + "'", function (err, out) {
         done(!err && /"returnValue"\s*:\s*true/.test(out));
       });
     }
     function finish(ok) { probe(function () { if (cb) { cb(ok); } }); }
     if (!on) {
       back = st.startApp.prev && st.startApp.prev !== id && appExists(st.startApp.prev) ? st.startApp.prev : 'com.webos.app.livetv';
-      return write(back, function (ok) { if (ok) { st.startApp = { on: false, prev: '' }; save(); } else { toast('The TV refused that.'); } finish(ok); });
+      return write('lastInputApp', back, function (ok) {
+        var auto = st.startApp.auto;
+        if (!ok) { toast('The TV refused that.'); return finish(false); }
+        st.startApp = { on: false, prev: '' }; save();
+        if (auto) { write('homeAutoLaunch', auto, function () { finish(true); }); } else { finish(true); }
+      });
     }
     setInput(true, function (ok) {
       if (!ok) { toast('The TV would not add Lantern to its input list, so start-up was left alone.'); return finish(false); }
       var prev = sys && sys.lastInput && sys.lastInput !== id && appExists(sys.lastInput) ? sys.lastInput : 'com.webos.app.livetv';
-      write(id, function (ok2) {
-        if (ok2) { st.startApp = { on: true, prev: prev }; save(); toast('Done. Restart the TV fully to see it start on Lantern.', 5000); } else { toast('The TV refused that.'); }
-        finish(ok2);
+      write('lastInputApp', id, function (ok2) {
+        if (!ok2) { toast('The TV refused that.'); return finish(false); }
+        var keptAuto = st.startApp.auto;
+        st.startApp = { on: true, prev: prev }; if (keptAuto) { st.startApp.auto = keptAuto; } save();
+        toast('Done. Restart the TV fully to see it start on Lantern.', 5000);
+        // with "start on LG Home" on, the TV opens LG Home as well as its last input: switch it off, remembering it was on
+        if (sys && sys.autoHome === 'on') {
+          write('homeAutoLaunch', 'off', function (ok3) { if (ok3) { st.startApp.auto = 'on'; save(); } finish(true); });
+        } else { finish(true); }
       });
     });
   }
@@ -1099,7 +1134,7 @@
     return "luna-send -n 1 " + SET + "/setSystemSettings '" + JSON.stringify({ category: cat, settings: (function () { var o = {}; o[key] = value; return o; })() }) + "' >/dev/null 2>&1";
   }
   function keepPreload(id) {           // never touched: Lantern, LG Home and the TV inputs
-    return id === selfId() || id === LG_HOME || INPUTS.some(function (i) { return i.id === id; });
+    return id === selfId() || id === LG_HOME || id === 'com.webos.app.fullhome' || INPUTS.some(function (i) { return i.id === id; });
   }
   function splitMarks(out) {
     var part = {}, name = null;
@@ -1198,6 +1233,16 @@
     exec(preloadCmd(id, on), function (err) {
       if (err) { toast('That needs Homebrew Channel with root.'); }
       applySystem(function () { tuneProbe(function () { redrawIf('Tune-up'); }); });   // the start-up script re-applies the choice after a restart
+    });
+  }
+  function preloadAllOff() {           // every app the TV keeps loaded, except Home, Live TV, the inputs and Lantern
+    var ids = (tune && tune.pre ? tune.pre : []).filter(function (a) { return a.on && !keepPreload(a.id) && safeId(a.id); }).map(function (a) { return a.id; });
+    if (!ids.length) { toast('Nothing left to switch off.'); return; }
+    ids.forEach(function (id) { if (!has(st.tune.preOff, id)) { st.tune.preOff.push(id); } });
+    save();
+    exec(ids.map(function (id) { return preloadCmd(id, false); }).join('; ') + '; true', function (err) {
+      if (err) { toast('That needs Homebrew Channel with root.'); }
+      applySystem(function () { tuneProbe(function () { redrawIf('Tune-up'); }); });
     });
   }
   function restoreTune(cb) {
@@ -1712,6 +1757,10 @@
       r = rw();
       cycle(r, 'App names', 'names', ['focus', 'always'], ['Selected app only', 'Always']);
       onoff(r, 'Motion', 'motion');
+      h('Memory');
+      r = rw();
+      cycle(r, 'Smaller wallpaper to save memory', 'saveMem', ['auto', 'on', 'off'], ['Automatic: on for TVs under 1 GB', 'On', 'Off'], function () { wallShown = ''; showWall(); });
+      p((st.memTotal ? 'This TV has ' + st.memTotal + ' MB of memory, so it is ' + (lowMem() ? 'on' : 'off') + '. ' : '') + 'Uses a 1280 x 720 copy of the wallpaper, which takes under half the memory of the full-size one and looks almost the same.');
       h('Screen');
       r = rw();
       onoff(r, 'Clock, date and weather', 'showBar');
@@ -1937,8 +1986,8 @@
           p('The TV is set to start on an app that is no longer installed (' + sys.lastInput + '). Switch the option below on, or the TV may start on a blank screen.');
         }
         r = rw();
-        btn(r, 'Start the TV on Lantern', sys.lastInput === selfId() ? 'On' : 'Off', '', function () { setStartApp(sys.lastInput !== selfId(), function () { redraw(true); }); });
-        p('The TV opens Lantern itself as it starts, the same way it would open HDMI 1. Lantern is added to the input list for this, and it takes a full TV restart to show.');
+        btn(r, 'Start the TV on Lantern', sys.lastInput === selfId() && sys.autoHome !== 'on' ? 'On' : sys.lastInput === selfId() ? 'On, but LG Home opens too' : 'Off', '', function () { setStartApp(sys.lastInput !== selfId() || sys.autoHome === 'on', function () { redraw(true); }); });
+        p('The TV opens Lantern itself as it starts, the same way it would open HDMI 1. Lantern is added to the input list for this, and it takes a full TV restart to show.' + (sys.autoHome === 'on' ? ' The TV\'s own "start on LG Home" option is on, which opens LG Home as well; switching this on (again) turns that off.' : ''));
         r = rw();
         btn(r, 'A few seconds after the TV starts', { off: 'Do nothing', open: 'Open Lantern', ready: 'Load Lantern in the background' }[st.boot], '', function () {
           sysToggle(function () { st.boot = { off: 'open', open: 'ready', ready: 'off' }[st.boot]; });
@@ -1986,10 +2035,12 @@
         else {
           tune.pre.forEach(function (a, i) {
             if (i % 3 === 0) { r = rw(); }
-            if (keepPreload(a.id)) { btn(r, labelFor(a.id), 'Kept', '', function () { toast('Lantern leaves Home, Live TV and the inputs loaded so switching stays quick.'); }); }
+            if (keepPreload(a.id)) { btn(r, a.id === 'com.webos.app.fullhome' ? 'LG Home (full screen)' : labelFor(a.id), 'Kept', '', function () { toast('Lantern leaves Home, Live TV and the inputs loaded so switching stays quick.'); }); }
             else { btn(r, labelFor(a.id), a.on ? 'Loaded' : 'Off', '', function () { setPreload(a.id, !a.on); }); }
           });
-          p('An app switched off here opens a little more slowly but stops using memory while you are not using it.');
+          r = rw();
+          btn(r, 'Switch off all of these except Home, Live TV and the inputs', null, '', preloadAllOff);
+          p('An app switched off here opens a little more slowly but stops using memory while you are not using it. On the TV Lantern was measured on, Netflix and YouTube held about 97 MB and 77 MB this way. Lantern re-applies your choices each time the TV starts. Switching one off stops it being loaded from the next start; "Close apps running in the background" above frees the memory now.');
         }
         h('');
         r = rw();
@@ -2013,6 +2064,8 @@
         kv(body, 'Shown as a TV input', st.input ? 'Yes' : 'No');
         kv(body, 'TV\'s Home app', sys.homeApp ? labelFor(sys.homeApp) + ' (' + sys.homeApp + ')' : 'Not reported by this TV');
         kv(body, 'TV starts on', sys.lastInput ? labelFor(sys.lastInput) + (appExists(sys.lastInput) ? '' : ' (not installed)') : 'Not reported by this TV');
+        kv(body, 'TV also opens LG Home at start', sys.autoHome ? (sys.autoHome === 'on' ? 'Yes' : 'No') : 'Not reported by this TV');
+        kv(body, 'Smaller wallpaper', lowMem() ? 'On' : 'Off');
         kv(body, 'Background loading', sys.noPreload ? 'Not supported on this TV' : sys.warm ? 'Running' : 'Off');
         kv(body, 'Buttons remapped by Lantern', String(Object.keys(st.binds).length));
         kv(body, 'Memory', (function () {
@@ -2191,7 +2244,7 @@
   startTimers();
   wake();
   setTimeout(function () {       // slower checks wait until the screen is up
-    refreshApps(); weather(); askKeepAlive();
+    refreshApps(); weather(); askKeepAlive(); readMemory();
     if (launchParams().standby) { sleep(); }
     if (!st.setupDone) { if (document.hidden) { pendingSetup = true; } else { openSetup(0); } }
   }, 1500);

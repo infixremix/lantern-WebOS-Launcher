@@ -29,10 +29,12 @@ assert $3
 " 2>/tmp/lantern-test/err; then echo "ok    $1"; else echo "FAIL  $1"; cat /tmp/lantern-test/err | tail -2; fail=1; fi
 }
 KB0='{"1086":{"action":"launch","id":"com.other.app"}}'
-check home 12000 "d['focus'].endswith('YouTube') and 'calm' in d['cls'] and 'menu-open' not in d['cls'] and 'walls/' in d['bg']"
+check home 12000 "d['focus'].endswith('YouTube') and 'calm' in d['cls'] and 'menu-open' not in d['cls'] and 'walls/s-' in d['bg'] and d['memTotal'] == 658 and d['rowsDisplay'] == 'none'"
+check home,bigmem 12000 "'walls/' in d['bg'] and 'walls/s-' not in d['bg']"
+check home,classic 12000 "d['rowsDisplay'] == ''"
 check home,nolghome 12000 "len(d['appIds']) == 20 and not [i for i in d['appIds'] if i in ('com.webos.app.home', 'com.webos.app.fullhome')] and 'Home' not in d['tiles']"
-check down 12000 "'menu-open' in d['cls'] and d['focus'].startswith('Live TV')"
-check downup 12000 "'menu-open' not in d['cls'] and d['focus'].endswith('YouTube')"
+check down 12000 "'menu-open' in d['cls'] and d['focus'].startswith('Live TV') and d['rowsDisplay'] == 'block'"
+check downup 12000 "'menu-open' not in d['cls'] and d['focus'].endswith('YouTube') and d['rowsDisplay'] == 'none'"
 check downback 12000 "'menu-open' not in d['cls'] and d['focus'].endswith('YouTube')"
 check alltile 12000 "'menu-open' in d['cls'] and d['focus'].startswith('Live TV')"
 check standby 12000 "'quiet' in d['cls'] and 'q-dim' in d['cls']"
@@ -48,6 +50,9 @@ check setupwalk,fresh 40000 "d['setupDone'] is True and d['city'] == 'Bristol' a
 check setupfocus,fresh 14000 "d['h1'] == 'Where you are' and d['city'] == 'Bristol' and d['focus'].startswith('Look it up again')"
 check home,nopins 12000 "[n for n in d['dock']] == ['Plex', 'Kodi', 'Disney+', 'Apple TV', 'BBC iPlayer', 'All apps']"
 check starton 24000 "d['tvLast'] == 'com.infixremix.lantern' and d['startApp'] == {'on': True, 'prev': 'com.webos.app.livetv'} and d['input'] and 'addDevice' in d['luna'][0]"
+check starton,autoon 24000 "d['tvLast'] == 'com.infixremix.lantern' and d['tvAuto'] == 'off' and d['startApp']['auto'] == 'on'"
+check startoff,autoon 30000 "d['tvLast'] == 'com.webos.app.livetv' and d['tvAuto'] == 'on' and d['startApp'] == {'on': False, 'prev': ''}"
+check preall 26000 "sorted(d['tune']['preOff']) == ['com.fake.app1', 'com.webos.app.browser'] and sorted(d['pre']) == ['com.fake.app1', 'com.webos.app.browser'] and 'setPreloadPolicy' in d['sys']"
 check starton,lastgone 24000 "d['tvLast'] == 'com.infixremix.lantern' and d['startApp']['prev'] == 'com.webos.app.livetv'"
 check home,light 12000 "'light' in d['cls']"
 check home,dark 12000 "'light' not in d['cls']"

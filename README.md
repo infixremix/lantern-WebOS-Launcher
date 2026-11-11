@@ -42,6 +42,7 @@ I have tested Lantern on one TV, my own: **LG 43LM6300PLA**, webOS 4.10.2, roote
 | | What |
 | --- | --- |
 | Confirmed on my TV | The calm home screen with its dock and button hints; the earlier grid layout; app icons (loaded through the root symlink method, see the known issue below); weather; widgets, including the TV memory widget, which needs root; standby; the setup steps opening and running; Lantern set as the TV's Home app (`defaultApps.home`) with the Home key opening it; Lantern in the TV's input list, and the TV starting on Lantern after a full restart once it is the TV's last input. That start-up route is what my TV needed; other models may differ. |
+| Measured on my TV (1.0.1) | My TV has 674 MB of memory. Sitting idle on the home screen, Lantern's process held about 44 MB, used 0% CPU, and did not grow over about 8 minutes. The TV's own preloading cost more than Lantern did: Netflix and YouTube were being kept loaded at about 97 MB and 77 MB, and switching those two preloads off raised available memory from about 131 MB to 264 MB. Graphics memory (CMA, 53 MB in total) was often under 1 MB free, which is why in 1.0.2 I removed the closed apps menu from the page and switched to 1280 x 720 wallpaper on TVs under 1 GB. I have not measured the effect of those 1.0.2 changes yet. |
 | Working, but not written down | Most of the remaining features have worked on my TV, but I did not record which ones, so I list them as unconfirmed below. |
 | Known issues on my TV | With widgets on, they vanished instead of fading when standby started (I reworked this in 1.0.1 and have not confirmed it). On a first install, app icons only appeared after Lantern was restarted; 1.0.1 reloads itself once when that happens, which I have not confirmed on the TV. Fading into standby was instant in 1.0.0 (fixed in 1.0.1, also unconfirmed). Opening Lantern cold (Home after it was closed, or waking from standby) shows LG's own loading cover for about 4 to 5 seconds, and LG Home has sometimes appeared as well. `noSplashOnLaunch` and `spinnerOnLaunch` in `appinfo.json` do not remove that cover. Instant Home is there to avoid cold starts; I have not confirmed it on the TV yet. |
 | Not yet confirmed on a TV | The reworked setup steps and the "Start the TV on Lantern" switch in 1.0.1, light and dark, day and night wallpapers, location lookup, Instant Home, the apps menu, button remapping and Tune-up. My automated tests cover these, but they run against a fake TV. |
@@ -56,7 +57,7 @@ I have tested Lantern on one TV, my own: **LG 43LM6300PLA**, webOS 4.10.2, roote
 Build the package (below) or download an `.ipk` from Releases, then install it with [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop) or:
 
 ```sh
-ares-install -d tv com.infixremix.lantern_1.0.1_all.ipk
+ares-install -d tv com.infixremix.lantern_1.0.2_all.ipk
 ```
 
 ## Remote
@@ -103,6 +104,7 @@ If Lantern will not open, deleting `/var/lib/webosbrew/init.d/55-lantern` over S
 - Remapping buttons depends on the LG Input Hook app. Hearth bundles the key hook itself.
 - Location lookup by internet address is accurate to about a town and can be wrong.
 - Online photos and weather need the TV to accept current security certificates, which some old firmware does not.
+- On my TV the loading cover is started by LG's own cover app when Lantern is opened as an input, and LG Home still receives the Home key even with Lantern set as the Home app. Lantern cannot remove either without changing system files, which it does not do.
 - There is no screen saver replacement and no theme packs.
 
 ## Credits
