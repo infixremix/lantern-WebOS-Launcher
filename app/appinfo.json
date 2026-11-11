@@ -1,0 +1,17 @@
+{
+  "id": "com.infixremix.lantern",
+  "version": "1.0.0",
+  "vendor": "infixremix",
+  "type": "web",
+  "main": "index.html",
+  "title": "Lantern",
+  "appDescription": "A customisable home screen with a dock, widgets, standby mode and remote remapping.",
+  "icon": "icon.png",
+  "largeIcon": "largeIcon.png",
+  "bgColor": "#000000",
+  "resolution": "1920x1080",
+  "disableBackHistoryAPI": true,
+  "supportGIP": true,
+  "noSplashOnLaunch": true,
+  "spinnerOnLaunch": false
+}

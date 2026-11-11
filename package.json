@@ -1,0 +1,16 @@
+{
+  "name": "lantern-webos",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Lantern: a customisable home screen for rooted LG webOS TVs",
+  "license": "MIT",
+  "scripts": {
+    "check": "acorn --ecma5 app/app.js > /dev/null && echo 'app.js is ES5'",
+    "test": "npm run check && sh test/run.sh",
+    "package": "npm run check && mkdir -p dist && ares-package --no-minify app -o dist"
+  },
+  "devDependencies": {
+    "@webos-tools/cli": "^3.2.6",
+    "acorn": "^8.0.0"
+  }
+}
