@@ -24,9 +24,9 @@ This note covers one problem seen on an LG 43LM6300PLA (webOS 4.10.2): pressing 
 ## Install
 
 ```sh
-ares-install -d tv com.infixremix.lantern_1.0.2_all.ipk
+ares-install -d tv com.infixremix.lantern_1.0.3_all.ipk
 # or, on the TV:
-luna-send -i -f luna://com.webos.appInstallService/dev/install '{"id":"com.infixremix.lantern","ipkUrl":"/tmp/com.infixremix.lantern_1.0.2_all.ipk","subscribe":true}'
+luna-send -i -f luna://com.webos.appInstallService/dev/install '{"id":"com.infixremix.lantern","ipkUrl":"/tmp/com.infixremix.lantern_1.0.3_all.ipk","subscribe":true}'
 ```
 
 Then open Lantern, go to Settings, Remote, and switch on **Instant Home**. Restart the TV fully (unplug it, or switch Quick Start+ off and power-cycle) so the start-up script runs.

@@ -33,6 +33,7 @@ The screenshots are from my desktop test, so the tiles show placeholder icons.
 - **Home app and start-up.** Make Lantern the TV's own Home app where the TV supports it, or map the Home button through LG Input Hook (one or the other, never both). "Start the TV on Lantern" adds it to the input list and makes it the input the TV starts on.
 - **Tune-up.** Close apps running in the background, switch off the TV's ad, promotion and tracking settings, and stop apps being preloaded. Each original value is saved first.
 - **System information.** Root status, Homebrew Channel and LG Input Hook status, model, webOS version, firmware, memory and IP address.
+- **Restart when it matters.** If setup changed how the TV starts or opens Lantern (Home app, input, start-up, staying in memory), Lantern restarts the TV at the end so the changes take effect, with a 15 second countdown and a Later button.
 - **Restore TV defaults.** One button undoes every change Lantern made outside its own folder.
 
 ## Tested on
@@ -45,7 +46,7 @@ I have tested Lantern on one TV, my own: **LG 43LM6300PLA**, webOS 4.10.2, roote
 | Measured on my TV (1.0.1) | My TV has 674 MB of memory. Sitting idle on the home screen, Lantern's process held about 44 MB, used 0% CPU, and did not grow over about 8 minutes. The TV's own preloading cost more than Lantern did: Netflix and YouTube were being kept loaded at about 97 MB and 77 MB, and switching those two preloads off raised available memory from about 131 MB to 264 MB. Graphics memory (CMA, 53 MB in total) was often under 1 MB free, which is why in 1.0.2 I removed the closed apps menu from the page and switched to 1280 x 720 wallpaper on TVs under 1 GB. I have not measured the effect of those 1.0.2 changes yet. |
 | Working, but not written down | Most of the remaining features have worked on my TV, but I did not record which ones, so I list them as unconfirmed below. |
 | Known issues on my TV | With widgets on, they vanished instead of fading when standby started (I reworked this in 1.0.1 and have not confirmed it). On a first install, app icons only appeared after Lantern was restarted; 1.0.1 reloads itself once when that happens, which I have not confirmed on the TV. Fading into standby was instant in 1.0.0 (fixed in 1.0.1, also unconfirmed). Opening Lantern cold (Home after it was closed, or waking from standby) shows LG's own loading cover for about 4 to 5 seconds, and LG Home has sometimes appeared as well. `noSplashOnLaunch` and `spinnerOnLaunch` in `appinfo.json` do not remove that cover. Instant Home is there to avoid cold starts; I have not confirmed it on the TV yet. |
-| Not yet confirmed on a TV | The reworked setup steps and the "Start the TV on Lantern" switch in 1.0.1, light and dark, day and night wallpapers, location lookup, Instant Home, the apps menu, button remapping and Tune-up. My automated tests cover these, but they run against a fake TV. |
+| Not yet confirmed on a TV | The restart prompt after setup (1.0.3), including whether the restart command works on my TV. The reworked setup steps and the "Start the TV on Lantern" switch in 1.0.1, light and dark, day and night wallpapers, location lookup, Instant Home, the apps menu, button remapping and Tune-up. My automated tests cover these, but they run against a fake TV. |
 
 ## Requirements
 
@@ -57,7 +58,7 @@ I have tested Lantern on one TV, my own: **LG 43LM6300PLA**, webOS 4.10.2, roote
 Build the package (below) or download an `.ipk` from Releases, then install it with [webOS Dev Manager](https://github.com/webosbrew/dev-manager-desktop) or:
 
 ```sh
-ares-install -d tv com.infixremix.lantern_1.0.2_all.ipk
+ares-install -d tv com.infixremix.lantern_1.0.3_all.ipk
 ```
 
 ## Remote

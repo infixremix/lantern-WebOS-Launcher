@@ -14,7 +14,7 @@
 (function () {
   'use strict';
 
-  var VERSION = '1.0.2';
+  var VERSION = '1.0.3';
   var HB = 'luna://org.webosbrew.hbchannel.service';
   var SAM = 'luna://com.webos.applicationManager';
   var EIM = 'luna://com.webos.service.eim';
@@ -102,7 +102,7 @@
   var bridges = [], sys = null, tune = null, tvInfo = null, wx = null, tvStat = null, cityHits = [], wallHits = null, pickFor = null;
   var previewTimer = null, toastTimer = null, idleTimer = null, shiftTimer = null, okTimer = null, tickTimer = null, wxTimer = null;
   var slideTimer = null, slideAt = 0, night = false, dark = true, setupStep = 0, pendingSetup = false, wallFor = 'day', wallPreview = null;
-  var menuTimer = null;
+  var menuTimer = null, setupMark = '', restartTimer = null;
   var iconOk = 0, iconFail = 0, pendingReload = false, ipNote = '';
   var quiet = false, okDown = false, okHeld = false, lastRefresh = 0, lastDay = -1, wallShown = '', selfLaunchAt = 0;
   var learn = null;
@@ -1309,7 +1309,7 @@
     applyLook();
   }
   function closeOverlay() {
-    stopLearn();
+    stopLearn(); clearInterval(restartTimer); restartTimer = null;
     unfocus(); mode = null; pickFor = null; wallPreview = null;
     $overlay.className = '';
     clear($sheet);
@@ -1528,7 +1528,7 @@
     stopLearn();
     openOverlay('setup');
     $sheet.className = 'setup';
-    setupStep = step || 0; ipNote = '';
+    setupStep = step || 0; ipNote = ''; setupMark = sysMark();
     probe(function () { if (mode === 'setup') { drawSetup(true); } });
     drawSetup();
   }
@@ -1537,8 +1537,33 @@
     wallFor = 'day'; cityHits = [];
     drawSetup();
   }
+  // The TV-level switches (Home app, input, start-up, staying in memory) only take full effect after the TV restarts.
+  function sysMark() { return JSON.stringify([st.homeApp.on, st.startApp.on, st.input, st.keep, st.rewarm, st.boot, st.watch]); }
+  function restartTV() {
+    clearInterval(restartTimer); restartTimer = null;
+    toast('Restarting the TV…', 20000);
+    exec("sync; luna-send -n 1 luna://com.webos.service.sleep/shutdown/machineReboot '{\"reason\":\"SwDownload\"}' >/dev/null 2>&1; sleep 5; reboot", function (err) {
+      if (err) { toast('The TV would not restart from here. Unplug it for ten seconds, or hold the power button until it restarts.', 8000); }
+    });
+  }
+  function openRestart() {
+    var left = 15, line, r, go;
+    openOverlay('restart', true);
+    $sheet.appendChild(el('h1', null, 'Restart the TV'));
+    $sheet.appendChild(el('p', 'big', 'You changed how the TV itself starts or opens Lantern. Those changes only take full effect after the TV restarts.'));
+    line = el('p', null, ''); $sheet.appendChild(line);
+    function tick() { line.textContent = 'Restarting in ' + left + ' second' + (left === 1 ? '' : 's') + '.'; }
+    r = row();
+    go = btn(r, 'Restart now', null, 'go', restartTV);
+    btn(r, 'Later', null, '', function () { closeOverlay(); toast('Restart the TV yourself when you are ready: Settings, System, Restart the TV.', 6000); });
+    tick(); focus(go);
+    clearInterval(restartTimer);
+    restartTimer = setInterval(function () { left -= 1; if (left <= 0) { restartTV(); } else { tick(); } }, 1000);
+  }
   function finishSetup() {
+    var changed = sysMark() !== setupMark && sys && sys.ok && sys.root;
     st.setupDone = true; save();
+    if (changed) { if (pendingReload) { pendingReload = false; } openRestart(); return; }
     closeOverlay();
     if (pendingReload) { pendingReload = false; checkIcons(); }
   }
@@ -2052,6 +2077,7 @@
     }
 
     if (name === 'System') {
+      if (sys && sys.ok && sys.root) { r = rw(); btn(r, 'Restart the TV', null, '', openRestart); }
       kv(body, 'Lantern', VERSION);
       if (!sys) { p('Checking the TV…'); }
       else {
